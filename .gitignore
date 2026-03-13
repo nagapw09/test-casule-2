@@ -1,0 +1,6 @@
+.cursor/
+.codex/
+.gemini/
+
+# Build artifacts
+test-casule

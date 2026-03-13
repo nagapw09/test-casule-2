@@ -1,0 +1,4 @@
+REPO test-casule
+LOAD test-casule.yaml
+ENTRY test-casule/stack
+IMAGE test-casule:latest test-casule/test-casule . Dockerfile

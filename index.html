@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Простенький сайт</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Простенький веб-сайт</h1>
+      <p>
+        Это минимальный сайт с фронтендом и простым бэкендом на Go.
+      </p>
+
+      <section class="card">
+        <h2>Небольшая интерактивность</h2>
+        <p>Нажми кнопку, чтобы увеличить счетчик.</p>
+        <button id="counterButton" type="button">Нажато: 0</button>
+      </section>
+
+      <section class="card">
+        <h2>Проверка бэкенда</h2>
+        <p>Нажми кнопку, чтобы получить ответ от API.</p>
+        <button id="backendButton" type="button">Запрос к серверу</button>
+        <p id="backendResult">Ответ сервера появится здесь.</p>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
