@@ -1,0 +1,155 @@
+namespace: /system
+registry:
+  defines: runnable
+  variables:
+    listen-port:
+      type: string
+      value: 5000
+  services:
+    registry:
+      port: <- $listen-port
+      host-port: <- $listen-port
+      container: registry
+      protocol: tcp
+  containers:
+    registry:
+      image: docker.io/registry:2
+      environment:
+        - "REGISTRY_STORAGE_DELETE_ENABLED=true"
+        - "REGISTRY_HTTP_RELATIVEURLS=true"
+nginx:
+  defines: runnable
+  containers:
+    nginx:
+      image: docker.io/bitnamilegacy/nginx
+      image-tag: latest
+  services:
+    nginx:
+      port: <- $listen-port
+      host-port: <- $listen-port
+      container: nginx
+      protocol: tcp
+      publish: true
+  connections:
+    registry:
+      runnable: system/registry
+      service: registry
+  variables:
+    listen-port:
+      type: int
+      value: 7080
+    registry-host:
+      type: string
+      value: <- get-hostname("system/registry", "registry")
+    registry-port:
+      value: 5000
+      type: int
+    resolver-ip:
+      value: <- get-resolver-ip
+      type: string
+    ssl-certificate:
+      type: string
+      value: <- ssl-certificate
+    ssl-private-key:
+      type: string
+      value: <- ssl-private-key
+    domain:
+      type: string
+      value: <- domain-name
+  files:
+    defines: files
+    htpasswd-def:
+      mode: 511
+      container: nginx
+      path: /etc/nginx/conf.d/nginx.htpasswd
+      contents: <- secret("htpasswd")
+    ssl-cert-file:
+      mode: 511
+      container: nginx
+      path: /etc/nginx/ssl/registry.crt
+      contents: <- ssl-certificate
+    ssl-key-file:
+      mode: 511
+      container: nginx
+      path: /etc/nginx/ssl/registry.key
+      contents: <- ssl-private-key
+    server-def:
+      mode: 511
+      container: nginx
+      path: /opt/bitnami/nginx/conf/server_blocks/reverse_proxy.conf
+      contents: |
+        ## Set a variable to help us decide if we need to add the
+        ## 'Docker-Distribution-Api-Version' header.
+        ## The registry always sets this header.
+        ## In the case of nginx performing auth, the header is unset
+        ## since nginx is auth-ing before proxying.
+        map $upstream_http_docker_distribution_api_version $docker_distribution_api_version {
+          '' 'registry/2.0';
+        }
+        
+        server {
+          listen 0.0.0.0:{{ v "listen-port" }} ssl default_server;
+          
+          # SSL Configuration
+          ssl_certificate /etc/nginx/ssl/registry.crt;
+          ssl_certificate_key /etc/nginx/ssl/registry.key;
+          server_name {{ v "domain" }};
+          
+          # SSL Security Settings
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+          ssl_prefer_server_ciphers off;
+          ssl_session_cache shared:SSL:10m;
+          ssl_session_timeout 1d;
+
+          resolver {{ v "resolver-ip" }} valid=30s;
+        
+          proxy_pass_request_headers on;
+          proxy_http_version 1.1;
+          proxy_set_header X-Forwarded-Host $host;
+          proxy_set_header X-Forwarded-Server $host;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header Host $host;
+        
+          # disable any limits to avoid HTTP 413 for large image uploads
+          client_max_body_size 0;
+        
+          # required to avoid HTTP 411: see Issue #1486 (https://github.com/moby/moby/issues/1486)
+          chunked_transfer_encoding on;
+        
+          # Add basic authentication
+          auth_basic "System realm";
+          auth_basic_user_file /etc/nginx/conf.d/nginx.htpasswd;
+        
+          {{ if v "registry-host" }}
+          set $registry_upstream http://{{ v "registry-host" }}:{{ v "registry-port" }};
+          location /v2/ {
+            # Do not allow connections from docker 1.5 and earlier
+            # docker pre-1.6.0 did not properly set the user agent on ping, catch "Go *" user agents
+            if ($http_user_agent ~ "^(docker/1.(3|4|5(?!.[0-9]-dev))|Go ).*$" ) {
+              return 404;
+            }
+        
+            ## If $docker_distribution_api_version is empty, the header is not added.
+            ## See the map directive above where this variable is defined.
+            add_header 'Docker-Distribution-Api-Version' $docker_distribution_api_version always;
+        
+            # Ensure proper headers for Docker registry protocol
+            proxy_set_header Host {{ v "domain" }}:{{ v "listen-port" }};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host {{ v "domain" }};
+            proxy_set_header X-Forwarded-Port {{ v "listen-port" }};
+            
+            # Important: Don't buffer uploads for large image layers
+            proxy_request_buffering off;
+            proxy_buffering off;
+            
+            proxy_pass $registry_upstream;
+            proxy_read_timeout 900;
+          }
+          {{ end }}
+        }
