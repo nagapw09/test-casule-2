@@ -338,11 +338,22 @@ esac
         if [ -n "$CLOUD_DISK_SIZE" ] && [ "$CLOUD_PROVIDER" != "digitalocean" ]; then
             DISK_SIZE_FLAG="--disk-size $CLOUD_DISK_SIZE"
         fi
+        ZONE_FLAG=""
+        DISK_TYPE_FLAG=""
+        if [ "$CLOUD_PROVIDER" = "aws" ]; then
+            ZONE_FLAG="--zone ${CLOUD_REGION}a"
+            DISK_TYPE_FLAG="--disk-type gp3"
+        elif [ "$CLOUD_PROVIDER" = "gcp" ]; then
+            ZONE_FLAG="--zone ${CLOUD_REGION}-a"
+            DISK_TYPE_FLAG="--disk-type pd-ssd"
+        fi
         monk cluster grow \
             --name "$CLUSTER_NAME" \
             --tag "$BRANCH_TAG" \
             --provider "$CLOUD_PROVIDER" \
             --region "$CLOUD_REGION" \
+            $ZONE_FLAG \
+            $DISK_TYPE_FLAG \
             --instance-type "$CLOUD_INSTANCE_TYPE" \
             --num-instances "$CLOUD_INSTANCE_COUNT" \
             --generate-domain \
